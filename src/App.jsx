@@ -2466,7 +2466,7 @@ function App() {
                                         ) : readings.length > 0 ? (
                                           <div>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                              <p style={{ fontWeight: 'bold', fontSize: '0.875rem', margin: 0 }}>
+                                              <p style={{ fontWeight: 'bold', fontSize: '0.875rem', margin: 0, color: 'white', backgroundColor: 'black', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
                                                 {useDateRange && startDate && endDate 
                                                   ? `Readings (${readings.length} found in date range):`
                                                   : `Last 10 Readings (${readings.length}):`}
@@ -3122,7 +3122,7 @@ function App() {
                                                   ) : readings.length > 0 ? (
                                                     <div>
                                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                                                        <p style={{ fontWeight: 'bold', fontSize: '0.875rem', margin: 0 }}>
+                                                        <p style={{ fontWeight: 'bold', fontSize: '0.875rem', margin: 0, color: 'white', backgroundColor: 'black', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
                                                           {useDateRange && startDate && endDate 
                                                             ? `Readings (${readings.length} found in date range):`
                                                             : `Last 10 Readings (${readings.length}):`}
