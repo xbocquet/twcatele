@@ -1,0 +1,22 @@
+@use '@carbon/react/scss/reset';
+@use '@carbon/react/scss/theme' with (
+  $theme: (
+    // Add custom theme variables here if needed
+  )
+);
+@use '@carbon/react/scss/type';
+@use '@carbon/react/scss/components';
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+

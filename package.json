@@ -1,0 +1,29 @@
+{
+  "name": "twinit-carbon-app",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Simple React app with Carbon Design System connecting to Twinit platform",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "preinstall": "node -e \"console.log('KEY',!!process.env.DTPLATFORM_KEY,'PWD',process.cwd())\""
+    },
+    "dependencies": {
+    "@carbon/charts": "^1.27.0",
+    "@carbon/charts-react": "^1.27.0",
+    "@carbon/react": "^1.35.0",
+    "@dtplatform/platform-api": "^4.3.37",
+    "@vitejs/plugin-react": "^4.2.1",
+    "buffer": "^6.0.3",
+    "d3": "^7.9.0",
+    "events": "^3.3.0",
+    "process": "^0.11.10",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sass": "^1.69.5",
+    "util": "^0.12.5",
+    "vite": "^5.0.8",
+    "vite-plugin-node-polyfills": "^0.22.0"
+  }
+}
