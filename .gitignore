@@ -25,6 +25,8 @@ dist-ssr
 
 # Environment and secrets
 .npmrc
+!.npmrc
+
 .env
 .env.local
 .env.*.local
