@@ -1,53 +1,58 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { nodePolyfills } from 'vite-plugin-node-polyfills'
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import { nodePolyfills } from "vite-plugin-node-polyfills";
 
-// https://vitejs.dev/config/
 export default defineConfig({
+  server: {
+    port: 8083,
+  },
   plugins: [
     react(),
     nodePolyfills({
-      // Enable polyfills for Node.js modules needed by platform-api
-      include: ['events', 'buffer', 'process', 'util'],
+      // Exclure crypto et stream du polyfill par défaut, utiliser nos propres polyfills
+      exclude: ['crypto', 'stream'],
+      // Inclure les autres polyfills nécessaires
       globals: {
         Buffer: true,
         global: true,
         process: true,
       },
+      protocolImports: true,
     }),
   ],
-  define: {
-    'process.env': {},
-    global: 'globalThis',
-  },
   resolve: {
     alias: {
-      events: 'events',
-      buffer: 'buffer',
-      process: 'process/browser',
-      util: 'util',
+      // Utiliser crypto-browserify explicitement pour createHash
+      crypto: "crypto-browserify",
+      stream: "stream-browserify",
+      util: "util",
+      process: "process/browser",
+      buffer: "buffer",
+      assert: "assert",
     },
-    // Ensure CommonJS modules are resolved correctly
-    dedupe: ['prop-types'],
   },
-  server: {
-    port: 8083,
-    open: true
+  define: {
+    global: "globalThis",
+    "process.env": {},
   },
   optimizeDeps: {
-    include: ['events', 'buffer', 'process', 'util', 'prop-types', '@carbon/icons-react'],
+    // Inclure les dépendances nécessaires dans les dépendances optimisées
+    include: [
+      'crypto-browserify',
+      'stream-browserify',
+      'buffer',
+      'readable-stream',
+      'process/browser',
+    ],
     esbuildOptions: {
-      // Handle CommonJS modules properly
-      mainFields: ['module', 'main'],
+      define: {
+        global: "globalThis",
+      },
     },
   },
   build: {
-    outDir: 'dist',
     commonjsOptions: {
-      // Transform CommonJS modules to ES modules
       transformMixedEsModules: true,
-      include: [/node_modules/],
     },
   },
-})
-
+});
