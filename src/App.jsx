@@ -1266,18 +1266,27 @@ function App() {
         }
       }
 
-      // Determine time unit format for grouping based on period
-      let dateGroupFormat = '%Y-%m-%dT%H:00:00.000Z' // Default: hour
+      // Determine time unit and binSize for $dateTrunc based on period
+      let unit = 'hour'
+      let binSize = 1
+      let dateFormat = '%Y-%m-%dT%H:00:00.000Z' // ISO format for hour
       
       if (period === 'hour') {
-        dateGroupFormat = '%Y-%m-%dT%H:00:00.000Z'
+        unit = 'hour'
+        binSize = 1
+        dateFormat = '%Y-%m-%dT%H:00:00.000Z'
       } else if (period === '3hours') {
-        // For 3-hour buckets, we'll group by hour first and combine client-side
-        dateGroupFormat = '%Y-%m-%dT%H:00:00.000Z'
+        unit = 'hour'
+        binSize = 3
+        dateFormat = '%Y-%m-%dT%H:00:00.000Z'
       } else if (period === 'day') {
-        dateGroupFormat = '%Y-%m-%dT00:00:00.000Z'
+        unit = 'day'
+        binSize = 1
+        dateFormat = '%Y-%m-%dT00:00:00.000Z'
       } else if (period === 'month') {
-        dateGroupFormat = '%Y-%m-01T00:00:00.000Z'
+        unit = 'month'
+        binSize = 1
+        dateFormat = '%Y-%m-01T00:00:00.000Z'
       }
 
       // First, get a sample reading to determine the value field name
@@ -1306,61 +1315,37 @@ function App() {
         console.warn('Could not determine value field, using default "value":', e)
       }
 
-      // Build aggregation pipeline using $group
-      // Since $_ts is likely a string in ISO format, we'll use $substr to extract date parts
-      // Format: YYYY-MM-DDTHH:mm:ss.sssZ
-      let groupIdExpression = {}
-      
-      if (period === 'hour') {
-        // Group by hour: YYYY-MM-DDTHH:00:00.000Z
-        // $_ts format: YYYY-MM-DDTHH:mm:ss.sssZ
-        groupIdExpression = {
-          $concat: [
-            { $substr: ["$_ts", 0, 13] }, // YYYY-MM-DDTHH
-            ":00:00.000Z"
-          ]
-        }
-      } else if (period === '3hours') {
-        // For 3-hour buckets, group by hour first, then combine client-side
-        groupIdExpression = {
-          $concat: [
-            { $substr: ["$_ts", 0, 13] }, // YYYY-MM-DDTHH
-            ":00:00.000Z"
-          ]
-        }
-      } else if (period === 'day') {
-        // Group by day: YYYY-MM-DDT00:00:00.000Z
-        groupIdExpression = {
-          $concat: [
-            { $substr: ["$_ts", 0, 10] }, // YYYY-MM-DD
-            "T00:00:00.000Z"
-          ]
-        }
-      } else if (period === 'month') {
-        // Group by month: YYYY-MM-01T00:00:00.000Z
-        groupIdExpression = {
-          $concat: [
-            { $substr: ["$_ts", 0, 7] }, // YYYY-MM
-            "-01T00:00:00.000Z"
-          ]
-        }
-      } else {
-        // Default to hour
-        groupIdExpression = {
-          $concat: [
-            { $substr: ["$_ts", 0, 13] },
-            ":00:00.000Z"
-          ]
-        }
-      }
-
+      // Build aggregation pipeline using $dateTrunc (following documentation pattern)
+      // Step 1: $match - filter readings
+      // Step 2: $project - create bucket timestamp using $dateTrunc and format with $dateToString
+      // Step 3: $group - aggregate by bucket timestamp
+      // Step 4: $project - format output
+      // Step 5: $sort - sort by timestamp
       const aggregations = [
         {
           $match: matchCriteria
         },
         {
+          $project: {
+            tsAsBucket: {
+              $dateToString: {
+                format: dateFormat,
+                date: {
+                  $dateTrunc: {
+                    date: "$_ts",
+                    unit: unit,
+                    binSize: binSize
+                  }
+                }
+              }
+            },
+            "_ts": 1,
+            [valueField]: 1
+          }
+        },
+        {
           $group: {
-            _id: groupIdExpression,
+            _id: "$tsAsBucket",
             avg: { $avg: `$${valueField}` },
             min: { $min: `$${valueField}` },
             max: { $max: `$${valueField}` },
@@ -1394,74 +1379,6 @@ function App() {
       console.log('Server-side aggregated readings response:', aggregatedResult)
 
       let aggregatedReadings = aggregatedResult && aggregatedResult._list ? aggregatedResult._list : []
-
-      // Post-process for 3-hour buckets if needed
-      if (period === '3hours' && aggregatedReadings.length > 0) {
-        // Sort by timestamp (ascending for grouping)
-        aggregatedReadings.sort((a, b) => {
-          const tsA = new Date(a._ts || a._id || 0).getTime()
-          const tsB = new Date(b._ts || b._id || 0).getTime()
-          return tsA - tsB
-        })
-
-        // Group into 3-hour buckets
-        const threeHourBuckets = []
-        let currentBucket = null
-
-        for (const reading of aggregatedReadings) {
-          const ts = new Date(reading._ts || reading._id)
-          const roundedHour = Math.floor(ts.getHours() / 3) * 3
-          
-          const bucketKey = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}T${String(roundedHour).padStart(2, '0')}:00:00.000Z`
-          
-          if (!currentBucket || currentBucket._ts !== bucketKey) {
-            if (currentBucket) {
-              threeHourBuckets.push(currentBucket)
-            }
-            currentBucket = {
-              _ts: bucketKey,
-              values: [],
-              mins: [],
-              maxs: [],
-              counts: []
-            }
-          }
-          
-          if (reading.avg !== undefined) currentBucket.values.push(reading.avg)
-          if (reading.min !== undefined) currentBucket.mins.push(reading.min)
-          if (reading.max !== undefined) currentBucket.maxs.push(reading.max)
-          if (reading.count !== undefined) currentBucket.counts.push(reading.count)
-        }
-        
-        if (currentBucket) {
-          threeHourBuckets.push(currentBucket)
-        }
-
-        // Calculate aggregated values for each 3-hour bucket
-        aggregatedReadings = threeHourBuckets.map(bucket => {
-          const avg = bucket.values.length > 0 
-            ? bucket.values.reduce((sum, val) => sum + val, 0) / bucket.values.length 
-            : null
-          const min = bucket.mins.length > 0 ? Math.min(...bucket.mins) : null
-          const max = bucket.maxs.length > 0 ? Math.max(...bucket.maxs) : null
-          const count = bucket.counts.reduce((sum, cnt) => sum + cnt, 0)
-
-          return {
-            _ts: bucket._ts,
-            avg,
-            min,
-            max,
-            count
-          }
-        })
-
-        // Sort by timestamp descending
-        aggregatedReadings.sort((a, b) => {
-          const tsA = new Date(a._ts).getTime()
-          const tsB = new Date(b._ts).getTime()
-          return tsB - tsA
-        })
-      }
 
       setExpandedTelemetryItems(prev => ({
         ...prev,

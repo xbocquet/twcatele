@@ -20,3 +20,4 @@ if (typeof globalThis !== 'undefined') {
 // Exporter pour utilisation explicite si nécessaire
 export { Buffer, process };
 
+
