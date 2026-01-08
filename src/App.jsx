@@ -1095,15 +1095,15 @@ function App() {
         }
       }).filter(d => d.value !== null)
 
-      // Get navName and unit from telemetry item
-      let navName = ''
+      // Get BacnetDesc and unit from telemetry item
+      let bacnetDesc = ''
       let unit = ''
       if (telemetryItem) {
-        navName = getItemDisplayName(telemetryItem, true)
+        bacnetDesc = getItemValueByKeyPattern(telemetryItem, 'BacnetDesc') || ''
         unit = getItemValueByKeyPattern(telemetryItem, 'unit') || ''
       }
       
-      const title = navName ? `Aggregated Telemetry Reading for ${navName}` : 'Aggregated Telemetry Readings'
+      const title = bacnetDesc ? `Aggregated Telemetry Reading for ${bacnetDesc}` : 'Aggregated Telemetry Readings'
       const yAxisTitle = unit ? `Value (${unit})` : 'Value'
       
       return {
@@ -2083,6 +2083,7 @@ function App() {
                           const descPairs = getItemKeyValuePairsByPattern(item, 'desc')
                           const kindValue = getItemValueByKeyPattern(item, 'kind')
                           const unitValue = getItemValueByKeyPattern(item, 'unit')
+                          const bacnetDescValue = getItemValueByKeyPattern(item, 'BacnetDesc') || ''
                           
                           // Format multiple key-value pairs for display
                           const formatKeyValuePairs = (pairs) => {
@@ -2151,9 +2152,13 @@ function App() {
                                           <div>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                                               <p style={{ fontWeight: 'bold', fontSize: '0.875rem', margin: 0, color: 'white', backgroundColor: 'black', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
-                                                {useDateRange && startDate && endDate 
-                                                  ? `Readings (${readings.length} found in date range):`
-                                                  : `Last 10 Readings (${readings.length}):`}
+                                                {bacnetDescValue 
+                                                  ? (useDateRange && startDate && endDate 
+                                                      ? `Readings for ${bacnetDescValue} (${readings.length} found in date range):`
+                                                      : `Last 10 Readings for ${bacnetDescValue} (${readings.length}):`)
+                                                  : (useDateRange && startDate && endDate 
+                                                      ? `Readings (${readings.length} found in date range):`
+                                                      : `Last 10 Readings (${readings.length}):`)}
                                               </p>
                                               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                 {/* Display mode selector - only show if readings are numeric */}
@@ -2690,6 +2695,7 @@ function App() {
                                   const displayName = getItemDisplayName(item, isTelemetry)
                                   const kindValue = isTelemetry ? getItemValueByKeyPattern(item, 'kind') : null
                                   const unitValue = isTelemetry ? getItemValueByKeyPattern(item, 'unit') : null
+                                  const bacnetDescValue = isTelemetry ? (getItemValueByKeyPattern(item, 'BacnetDesc') || '') : ''
                                   
                                   // Get filtered properties (excluding metadata and prototype)
                                   const filteredProperties = getFilteredItemProperties(item)
@@ -2775,9 +2781,13 @@ function App() {
                                                     <div>
                                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                                                         <p style={{ fontWeight: 'bold', fontSize: '0.875rem', margin: 0, color: 'white', backgroundColor: 'black', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
-                                                          {useDateRange && startDate && endDate 
-                                                            ? `Readings (${readings.length} found in date range):`
-                                                            : `Last 10 Readings (${readings.length}):`}
+                                                          {bacnetDescValue 
+                                                            ? (useDateRange && startDate && endDate 
+                                                                ? `Readings for ${bacnetDescValue} (${readings.length} found in date range):`
+                                                                : `Last 10 Readings for ${bacnetDescValue} (${readings.length}):`)
+                                                            : (useDateRange && startDate && endDate 
+                                                                ? `Readings (${readings.length} found in date range):`
+                                                                : `Last 10 Readings (${readings.length}):`)}
                                                         </p>
                                                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                                                           {/* Display mode selector - only show if readings are numeric */}
