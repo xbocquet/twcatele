@@ -92,9 +92,6 @@ function App() {
   // Display mode state per telemetry item (table or chart)
   const [telemetryDisplayMode, setTelemetryDisplayMode] = useState({}) // { itemId: 'table'|'chart' }
   
-  // Aggregation method state per telemetry item (client or server)
-  const [telemetryAggregationMethod, setTelemetryAggregationMethod] = useState({}) // { itemId: 'client'|'server' }
-  
   // Expanded items state (for showing all properties)
   const [expandedItems, setExpandedItems] = useState({}) // { itemId: true/false }
   
@@ -1054,7 +1051,7 @@ function App() {
   }
 
   // Helper function to convert readings to Carbon Charts format
-  const convertReadingsToChartData = (readings, isAggregated) => {
+  const convertReadingsToChartData = (readings, isAggregated, telemetryItem = null) => {
     if (!readings || readings.length === 0) {
       return {
         data: [],
@@ -1098,10 +1095,21 @@ function App() {
         }
       }).filter(d => d.value !== null)
 
+      // Get navName and unit from telemetry item
+      let navName = ''
+      let unit = ''
+      if (telemetryItem) {
+        navName = getItemDisplayName(telemetryItem, true)
+        unit = getItemValueByKeyPattern(telemetryItem, 'unit') || ''
+      }
+      
+      const title = navName ? `Aggregated Telemetry Reading for ${navName}` : 'Aggregated Telemetry Readings'
+      const yAxisTitle = unit ? `Value (${unit})` : 'Value'
+      
       return {
         data: [...avgData, ...minData, ...maxData],
         options: {
-          title: 'Aggregated Telemetry Readings',
+          title: title,
           axes: {
             bottom: {
               title: 'Time',
@@ -1112,7 +1120,7 @@ function App() {
               }
             },
             left: {
-              title: 'Value',
+              title: yAxisTitle,
               mapsTo: 'value',
               scaleType: 'linear'
             }
@@ -1283,6 +1291,10 @@ function App() {
         unit = 'day'
         binSize = 1
         dateFormat = '%Y-%m-%dT00:00:00.000Z'
+      } else if (period === 'week') {
+        unit = 'week'
+        binSize = 1
+        dateFormat = '%Y-%m-%dT00:00:00.000Z'
       } else if (period === 'month') {
         unit = 'month'
         binSize = 1
@@ -1394,257 +1406,12 @@ function App() {
     } catch (err) {
       console.error('Failed to load server-side aggregated telemetry readings:', err)
       const itemId = telemetryItem._id || telemetryItem._userItemId
-      // If server-side aggregation fails, fall back to client-side
-      console.warn('Falling back to client-side aggregation. Error:', err.message)
       setExpandedTelemetryItems(prev => ({
         ...prev,
         [itemId]: { 
           ...prev[itemId],
           loading: false, 
-          error: `Server-side aggregation failed: ${err.message}. Falling back to client-side aggregation.`
-        }
-      }))
-      // Automatically fall back to client-side aggregation
-      // Temporarily set method to client to avoid infinite loop
-      setTelemetryAggregationMethod(prev => ({
-        ...prev,
-        [itemId]: 'client'
-      }))
-      loadAggregatedTelemetryReadings(telemetryItem, collectionId, period, dateRange)
-    }
-  }
-
-  // Load aggregated telemetry readings (client-side or server-side based on method)
-  const loadAggregatedTelemetryReadings = async (telemetryItem, collectionId, period, dateRange = null) => {
-    const itemId = telemetryItem._id || telemetryItem._userItemId
-    if (!itemId) return
-
-    // Check which aggregation method to use
-    const aggregationMethod = telemetryAggregationMethod[itemId] || 'client'
-    
-    if (aggregationMethod === 'server') {
-      // Use server-side aggregation
-      await loadAggregatedTelemetryReadingsServer(telemetryItem, collectionId, period, dateRange)
-      return
-    }
-    
-    // Otherwise, use client-side aggregation (existing implementation)
-    try {
-      // Set loading state
-      setExpandedTelemetryItems(prev => ({
-        ...prev,
-        [itemId]: { ...prev[itemId], loading: true }
-      }))
-
-      const authToken = await IafSession.getAuthToken()
-      const ctx = {
-        _namespaces: currentProject._namespaces || [],
-        authToken: authToken
-      }
-
-      const sourceId = telemetryItem._sourceId || telemetryItem._id
-      
-      // Build match criteria
-      let matchCriteria = {}
-      if (sourceId) {
-        matchCriteria["_tsMetadata._sourceId"] = sourceId
-      }
-      
-      // Add date range filter if provided
-      if (dateRange && dateRange.startDate && dateRange.endDate) {
-        try {
-          const startDateTime = new Date(`${dateRange.startDate}T${dateRange.startTime || '00:00'}`)
-          const endDateTime = new Date(`${dateRange.endDate}T${dateRange.endTime || '23:59'}`)
-          
-          matchCriteria._ts = {
-            $gte: startDateTime.toISOString(),
-            $lte: endDateTime.toISOString()
-          }
-        } catch (e) {
-          console.warn('Invalid date range, ignoring:', e)
-        }
-      }
-
-      // Determine time unit and value for dateTrunc based on period
-      let dateTruncUnit = 'hour'
-      let dateTruncValue = 1
-      
-      switch (period) {
-        case 'hour':
-          dateTruncUnit = 'hour'
-          dateTruncValue = 1
-          break
-        case '3hours':
-          dateTruncUnit = 'hour'
-          dateTruncValue = 3
-          break
-        case 'day':
-          dateTruncUnit = 'day'
-          dateTruncValue = 1
-          break
-        case 'month':
-          dateTruncUnit = 'month'
-          dateTruncValue = 1
-          break
-        default:
-          dateTruncUnit = 'hour'
-          dateTruncValue = 1
-      }
-
-      // First, get a sample reading to determine the value field name
-      // We'll use a simple query to get one reading first
-      let valueField = 'value' // default
-      try {
-        const sampleCriteria = sourceId ? {
-          query: { "_tsMetadata._sourceId": sourceId }
-        } : undefined
-        const sampleResult = await IafItemSvc.getRelatedReadingItems(
-          collectionId,
-          sampleCriteria,
-          ctx,
-          { page: { _pageSize: 1 } }
-        )
-        if (sampleResult && sampleResult._list && sampleResult._list.length > 0) {
-          const sampleReading = sampleResult._list[0]
-          // Find which field contains the numeric value
-          if (sampleReading.value !== undefined) {
-            valueField = 'value'
-          } else if (sampleReading.val !== undefined) {
-            valueField = 'val'
-          } else if (sampleReading.reading !== undefined) {
-            valueField = 'reading'
-          }
-        }
-      } catch (e) {
-        console.warn('Could not determine value field, using default "value":', e)
-      }
-
-      // Build aggregation pipeline
-      // Since $toDate, $substr, and $concat are not supported in $group by Twinit API,
-      // we'll fetch all readings in the date range and group them by period client-side
-      // This is less efficient but will work reliably
-      
-      // First, get all readings in the date range (without aggregation)
-      const readingsCriteria = Object.keys(matchCriteria).length > 0 ? {
-        query: matchCriteria
-      } : undefined
-
-      const allReadingsResult = await IafItemSvc.getRelatedReadingItems(
-        collectionId,
-        readingsCriteria,
-        ctx,
-        {
-          sort: { '_ts': 1 }, // Sort ascending for proper grouping
-          page: { _pageSize: 10000 } // Get up to 10000 readings
-        }
-      )
-
-      let allReadings = allReadingsResult && allReadingsResult._list ? allReadingsResult._list : []
-      
-      // Group readings by period client-side
-      const groupedReadings = {}
-      
-      for (const reading of allReadings) {
-        if (!reading._ts) continue
-        
-        const ts = new Date(reading._ts)
-        if (isNaN(ts.getTime())) continue
-        
-        let periodKey = ''
-        
-        if (period === 'hour') {
-          // Group by hour: YYYY-MM-DDTHH:00:00.000Z
-          periodKey = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}T${String(ts.getHours()).padStart(2, '0')}:00:00.000Z`
-        } else if (period === '3hours') {
-          // Group by 3-hour buckets: round down to nearest 3-hour mark
-          const roundedHour = Math.floor(ts.getHours() / 3) * 3
-          periodKey = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}T${String(roundedHour).padStart(2, '0')}:00:00.000Z`
-        } else if (period === 'day') {
-          // Group by day: YYYY-MM-DDT00:00:00.000Z
-          periodKey = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-${String(ts.getDate()).padStart(2, '0')}T00:00:00.000Z`
-        } else if (period === 'month') {
-          // Group by month: YYYY-MM-01T00:00:00.000Z
-          periodKey = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, '0')}-01T00:00:00.000Z`
-        }
-        
-        if (!periodKey) continue
-        
-        if (!groupedReadings[periodKey]) {
-          groupedReadings[periodKey] = {
-            _ts: periodKey,
-            values: [],
-            timestamps: []
-          }
-        }
-        
-        const readingValue = reading[valueField]
-        if (readingValue !== null && readingValue !== undefined) {
-          const numValue = typeof readingValue === 'string' ? parseFloat(readingValue) : Number(readingValue)
-          if (!isNaN(numValue) && isFinite(numValue)) {
-            groupedReadings[periodKey].values.push(numValue)
-            groupedReadings[periodKey].timestamps.push(ts)
-          }
-        }
-      }
-      
-      // Calculate aggregated values for each period
-      let aggregatedReadings = Object.values(groupedReadings).map(group => {
-        if (group.values.length === 0) {
-          return {
-            _ts: group._ts,
-            avg: null,
-            min: null,
-            max: null,
-            count: 0
-          }
-        }
-        
-        const sum = group.values.reduce((acc, val) => acc + val, 0)
-        const avg = sum / group.values.length
-        const min = Math.min(...group.values)
-        const max = Math.max(...group.values)
-        const count = group.values.length
-        
-        return {
-          _ts: group._ts,
-          avg,
-          min,
-          max,
-          count
-        }
-      })
-      
-      // Sort by timestamp descending
-      aggregatedReadings.sort((a, b) => {
-        const tsA = new Date(a._ts).getTime()
-        const tsB = new Date(b._ts).getTime()
-        return tsB - tsA
-      })
-      
-      console.log('Aggregated readings (client-side):', aggregatedReadings)
-
-      setExpandedTelemetryItems(prev => ({
-        ...prev,
-        [itemId]: { 
-          ...prev[itemId], // Preserve existing properties including isNumeric
-          readings: aggregatedReadings, 
-          loading: false, 
-          aggregated: true, 
-          period,
-          aggregationMethod: 'client'
-        }
-      }))
-    } catch (err) {
-      console.error('Failed to load aggregated telemetry readings:', err)
-      // If aggregation fails, fall back to regular readings
-      console.warn('Falling back to regular readings. Error:', err.message)
-      setExpandedTelemetryItems(prev => ({
-        ...prev,
-        [itemId]: { 
-          ...prev[itemId], // Preserve existing properties including isNumeric
-          readings: [], 
-          loading: false, 
-          error: `Aggregation failed: ${err.message}. Please check if the API supports time-based aggregation.` 
+          error: `Server-side aggregation failed: ${err.message}`
         }
       }))
     }
@@ -2430,7 +2197,7 @@ function App() {
                                                             endDate,
                                                             endTime
                                                           } : null
-                                                          loadAggregatedTelemetryReadings(
+                                                          loadAggregatedTelemetryReadingsServer(
                                                             item,
                                                             selectedCollection._id || selectedCollection._userItemId,
                                                             period,
@@ -2458,41 +2225,9 @@ function App() {
                                                       <SelectItem value="hour" text="Every Hour" />
                                                       <SelectItem value="3hours" text="Every 3 Hours" />
                                                       <SelectItem value="day" text="Every Day" />
+                                                      <SelectItem value="week" text="Every Week" />
                                                       <SelectItem value="month" text="Every Month" />
                                                     </Select>
-                                                    {/* Aggregation method selector - only show if aggregation is selected */}
-                                                    {telemetryAggregation[itemId]?.period && (
-                                                      <Select
-                                                        id={`aggregation-method-${itemId}`}
-                                                        labelText=""
-                                                        value={telemetryAggregationMethod[itemId] || 'client'}
-                                                        onChange={(event) => {
-                                                          const method = event.target?.value || event.selectedItem?.value
-                                                          setTelemetryAggregationMethod(prev => ({
-                                                            ...prev,
-                                                            [itemId]: method
-                                                          }))
-                                                          // Reload with new method
-                                                          const dateRange = useDateRange && startDate && endDate ? {
-                                                            startDate,
-                                                            startTime,
-                                                            endDate,
-                                                            endTime
-                                                          } : null
-                                                          loadAggregatedTelemetryReadings(
-                                                            item,
-                                                            selectedCollection._id || selectedCollection._userItemId,
-                                                            telemetryAggregation[itemId]?.period,
-                                                            dateRange
-                                                          )
-                                                        }}
-                                                        size="sm"
-                                                        style={{ width: '150px' }}
-                                                      >
-                                                        <SelectItem value="client" text="Client-side" />
-                                                        <SelectItem value="server" text="Server-side" />
-                                                      </Select>
-                                                    )}
                                                   </>
                                                 )}
                                               </div>
@@ -2501,7 +2236,7 @@ function App() {
                                             {telemetryDisplayMode[itemId] === 'chart' ? (
                                               <div style={{ marginTop: '1rem', height: '400px', backgroundColor: '#262626', padding: '1rem', borderRadius: '4px' }}>
                                                 {(() => {
-                                                  const chartData = convertReadingsToChartData(readings, expandedTelemetryItems[itemId]?.aggregated)
+                                                  const chartData = convertReadingsToChartData(readings, expandedTelemetryItems[itemId]?.aggregated, item)
                                                   return chartData.data.length > 0 ? (
                                                     <LineChart
                                                       data={chartData.data}
@@ -3086,7 +2821,7 @@ function App() {
                                                                       endDate,
                                                                       endTime
                                                                     } : null
-                                                                    loadAggregatedTelemetryReadings(
+                                                                    loadAggregatedTelemetryReadingsServer(
                                                                       item,
                                                                       selectedCollection._id || selectedCollection._userItemId,
                                                                       period,
@@ -3114,41 +2849,9 @@ function App() {
                                                                 <SelectItem value="hour" text="Every Hour" />
                                                                 <SelectItem value="3hours" text="Every 3 Hours" />
                                                                 <SelectItem value="day" text="Every Day" />
+                                                                <SelectItem value="week" text="Every Week" />
                                                                 <SelectItem value="month" text="Every Month" />
                                                               </Select>
-                                                              {/* Aggregation method selector - only show if aggregation is selected */}
-                                                              {telemetryAggregation[itemId]?.period && (
-                                                                <Select
-                                                                  id={`aggregation-method-telemetry-${itemId}`}
-                                                                  labelText=""
-                                                                  value={telemetryAggregationMethod[itemId] || 'client'}
-                                                                  onChange={(event) => {
-                                                                    const method = event.target?.value || event.selectedItem?.value
-                                                                    setTelemetryAggregationMethod(prev => ({
-                                                                      ...prev,
-                                                                      [itemId]: method
-                                                                    }))
-                                                                    // Reload with new method
-                                                                    const dateRange = useDateRange && startDate && endDate ? {
-                                                                      startDate,
-                                                                      startTime,
-                                                                      endDate,
-                                                                      endTime
-                                                                    } : null
-                                                                    loadAggregatedTelemetryReadings(
-                                                                      item,
-                                                                      selectedCollection._id || selectedCollection._userItemId,
-                                                                      telemetryAggregation[itemId]?.period,
-                                                                      dateRange
-                                                                    )
-                                                                  }}
-                                                                  size="sm"
-                                                                  style={{ width: '150px' }}
-                                                                >
-                                                                  <SelectItem value="client" text="Client-side" />
-                                                                  <SelectItem value="server" text="Server-side" />
-                                                                </Select>
-                                                              )}
                                                             </>
                                                           )}
                                                         </div>
@@ -3157,7 +2860,7 @@ function App() {
                                                       {telemetryDisplayMode[itemId] === 'chart' ? (
                                                         <div style={{ marginTop: '1rem', height: '400px', backgroundColor: '#262626', padding: '1rem', borderRadius: '4px' }}>
                                                           {(() => {
-                                                            const chartData = convertReadingsToChartData(readings, expandedTelemetryItems[itemId]?.aggregated)
+                                                            const chartData = convertReadingsToChartData(readings, expandedTelemetryItems[itemId]?.aggregated, item)
                                                             return chartData.data.length > 0 ? (
                                                               <LineChart
                                                                 data={chartData.data}
